@@ -1,0 +1,12 @@
+# Node/Vite
+node_modules/
+dist/
+.build/
+.vercel/
+.vscode/
+.DS_Store
+
+# Env
+.env
+.env.*.local
+.env.local
