@@ -6,41 +6,70 @@ const ALLOWED_SORT_FIELDS = new Set(["createdAt", "priceCents", "name"]);
 
 // Convert ?sort=-createdAt or ?sort=priceCents to a safe sort object
 function sanitizeSort(sortParam) {
-  const s = String(sortParam || "").trim();
+  const s = String(sortParam ?? "").trim();
   if (!s) return { createdAt: -1 }; // default newest first
 
-  let dir = 1;
-  let field = s;
-
-  if (s.startsWith("-")) {
-    dir = -1;
-    field = s.slice(1);
-  }
+  const desc = s.startsWith("-");
+  const field = desc ? s.slice(1) : s;
 
   if (!ALLOWED_SORT_FIELDS.has(field)) {
     return { createdAt: -1 };
   }
-  return { [field]: dir };
+  return { [field]: desc ? -1 : 1 };
+}
+
+function clampInt(value, { def, min = 1, max = 100 }) {
+  const n = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
 }
 
 // GET /api/products?category=soap|oil&page=1&pageSize=12&sort=-createdAt
 export const getProducts = async (req, res) => {
   try {
-    const { category, page = "1", pageSize = "12", sort = "-createdAt" } = req.query;
+    const { category, sort } = req.query;
 
-    const filter = category ? { category } : {};
+    // pagination (safe defaults)
+    const page = clampInt(req.query.page, { def: 1, min: 1, max: 1_000_000 });
+    const pageSize = clampInt(req.query.pageSize, { def: 12, min: 1, max: 100 });
+
     const safeSort = sanitizeSort(sort);
 
+    // filter
+    const filter = {};
+    if (category !== undefined && category !== null && category !== "") {
+      const cat = String(category).trim().toLowerCase();
+      if (!ALLOWED_CATEGORIES.has(cat)) {
+        // Bad param → tell the client (prevents 500)
+        return res.status(400).json({ message: "Invalid category", allowed: Array.from(ALLOWED_CATEGORIES) });
+      }
+      filter.category = cat; // expect string categories in DB: "oil" | "soap"
+    }
+
+    // Delegate to service (expects plain Mongo filter + options)
     const result = await productService.getAllProducts(filter, {
-      page: Math.max(1, parseInt(page, 10) || 1),
-      pageSize: Math.min(50, Math.max(1, parseInt(pageSize, 10) || 12)),
-      sort: safeSort,
+      page,
+      pageSize,
+      sort: safeSort,   // object form { createdAt: -1 } etc.
       paginate: true,
     });
 
-    res.status(200).json(result);
+    // Always 200; empty array when no matches
+    return res.status(200).json(result);
   } catch (err) {
-    res.status(500).json({ message: err?.message || "Failed to fetch products" });
+    // Useful diagnostics in Render logs
+    console.error("GET /api/products failed", {
+      query: req.query,
+      name: err?.name,
+      message: err?.message,
+    });
+
+    // Common data errors → 400 instead of opaque 500
+    if (err?.name === "CastError" || err?.name === "ValidationError") {
+      return res.status(400).json({ message: "Bad parameter", details: err?.message, query: req.query });
+    }
+
+    return res.status(500).json({ message: err?.message || "Failed to fetch products" });
   }
 };
 
@@ -50,6 +79,15 @@ export const getProduct = async (req, res) => {
     if (!product) return res.status(404).json({ message: "Product not found!" });
     res.status(200).json(product);
   } catch (err) {
+    console.error("GET /api/products/:id failed", {
+      id: req.params.id,
+      name: err?.name,
+      message: err?.message,
+    });
+
+    if (err?.name === "CastError") {
+      return res.status(400).json({ message: "Invalid product id", id: req.params.id });
+    }
     res.status(500).json({ message: err?.message || "Failed to fetch product" });
   }
 };
@@ -69,8 +107,10 @@ export const createProduct = async (req, res) => {
     if (!name || !category) {
       return res.status(400).json({ message: "Name and category are required" });
     }
-    if (!ALLOWED_CATEGORIES.has(String(category))) {
-      return res.status(400).json({ message: "Invalid category" });
+
+    const cat = String(category).trim().toLowerCase();
+    if (!ALLOWED_CATEGORIES.has(cat)) {
+      return res.status(400).json({ message: "Invalid category", allowed: Array.from(ALLOWED_CATEGORIES) });
     }
 
     const hasAnyPrice =
@@ -100,14 +140,15 @@ export const createProduct = async (req, res) => {
       name: String(name).trim(),
       imageSrc,
       description,
-      category: String(category),
-      price,      // Product model virtual maps this to priceCents
+      category: cat, // normalized
+      price,         // Product model virtual maps this to priceCents
       priceCents,
       prices,
     });
 
     res.status(201).json(newProduct);
   } catch (err) {
+    console.error("POST /api/products failed", { body: req.body, name: err?.name, message: err?.message });
     res.status(500).json({ message: err?.message || "Failed to create product" });
   }
 };
@@ -122,10 +163,11 @@ export const updateProduct = async (req, res) => {
     if (body.description !== undefined) updates.description = body.description;
 
     if (body.category !== undefined) {
-      if (!ALLOWED_CATEGORIES.has(String(body.category))) {
-        return res.status(400).json({ message: "Invalid category" });
+      const cat = String(body.category).trim().toLowerCase();
+      if (!ALLOWED_CATEGORIES.has(cat)) {
+        return res.status(400).json({ message: "Invalid category", allowed: Array.from(ALLOWED_CATEGORIES) });
       }
-      updates.category = String(body.category);
+      updates.category = cat;
     }
 
     if (body.price !== undefined) {
@@ -160,6 +202,12 @@ export const updateProduct = async (req, res) => {
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.status(200).json(product);
   } catch (err) {
+    console.error("PATCH /api/products/:id failed", {
+      id: req.params.id,
+      body: req.body,
+      name: err?.name,
+      message: err?.message,
+    });
     res.status(500).json({ message: err?.message || "Failed to update product" });
   }
 };
@@ -170,6 +218,7 @@ export const deleteProduct = async (req, res) => {
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.status(200).json({ message: "Product deleted successfully" });
   } catch (err) {
+    console.error("DELETE /api/products/:id failed", { id: req.params.id, name: err?.name, message: err?.message });
     res.status(500).json({ message: err?.message || "Failed to delete product" });
   }
 };
