@@ -1,4 +1,3 @@
-// controllers/productController.js
 import * as productService from "../services/productService.js";
 
 const ALLOWED_CATEGORIES = new Set(["soap", "oil"]);
