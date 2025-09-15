@@ -13,18 +13,31 @@ import uploadRoute from "./routes/uploadRoute.js";
 import authRoutes from "./routes/auth.js";
 import contactRoutes from "./routes/contactRoutes.js";
 
-
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5050;
 
-// behind proxy (Vercel/Render/Fly/NGINX) so secure cookies work
+// Behind a proxy (Render/Vercel/etc.) so secure cookies work
 app.set("trust proxy", 1);
 
-// CORS (allow cookies to frontend)
+/* --------------------------- CORS (credentials) --------------------------- */
+/**
+ * Set CLIENT_ORIGINS in Render like:
+ *   https://luxlather.store,https://luxlather-frontend.onrender.com,http://localhost:5173
+ * You can also use CLIENT_ORIGIN (single) if you prefer.
+ */
+const DEFAULT_ORIGINS = [
+  "http://localhost:5173",
+  "https://luxlather.store",
+  "https://luxlather-frontend.onrender.com",
+];
 
-const ORIGINS = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "http://localhost:5173")
+const ORIGINS = (
+  process.env.CLIENT_ORIGINS ||
+  process.env.CLIENT_ORIGIN ||
+  DEFAULT_ORIGINS.join(",")
+)
   .split(",")
   .map((s) => s.trim().replace(/\/+$/, "")) // strip spaces + trailing slashes
   .filter(Boolean);
@@ -35,34 +48,36 @@ const VERCEL_PREVIEW = /\.vercel\.app$/i;
 const corsOptions = {
   credentials: true,
   origin(origin, callback) {
-    // Non-browser (Postman, server-to-server like Stripe) -> allow
+    // Allow server-to-server/CLI/no-Origin (curl, Stripe, health checks)
     if (!origin) return callback(null, true);
 
     const clean = origin.replace(/\/+$/, "");
     if (ORIGINS.includes(clean) || VERCEL_PREVIEW.test(clean)) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+
+    // Don’t throw here (throwing leads to 500); just deny CORS headers.
+    console.warn("[CORS] Blocked origin:", origin);
+    return callback(null, false);
   },
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // handle preflight cleanly
 
-
-
-/**
- * Stripe webhook MUST be mounted BEFORE express.json()
- * stripeWebhook router exposes POST /webhook
- * Final URL => POST /api/stripe/webhook
- */
+/* ------------------- Stripe webhook BEFORE body parsers ------------------- */
+// stripeWebhook exposes POST /webhook  -> final URL:  POST /api/stripe/webhook
 app.use("/api/stripe", stripeWebhook);
 
-// Parsers for the rest of the routes
+/* --------------------------- Body/Cookie parsers -------------------------- */
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// API routes
+/* --------------------------------- Routes -------------------------------- */
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
@@ -70,24 +85,30 @@ app.use("/api/checkout", checkoutRoutes);
 app.use("/api/upload", uploadRoute);
 app.use("/api/contact", contactRoutes);
 
-
-// Healthcheck
+/* ------------------------------- Healthcheck ------------------------------ */
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// 404
-app.use((req, res) => res.status(404).json({ error: "Not found" }));
+/* ---------------------------------- 404s ---------------------------------- */
+app.use((req, res) => res.status(404).json({ error: "Not found", path: req.path }));
 
-// Central error handler
+/* --------------------------- Central error handler ------------------------ */
 app.use((err, req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ error: "Server error" });
+  // If CORS origin was blocked and some middleware bubbled an error anyway,
+  // respond with 403 instead of a generic 500.
+  const msg = err?.message || "Server error";
+  const status =
+    /cors/i.test(msg) || /not allowed by cors/i.test(msg) ? 403 : 500;
+
+  console.error("[ERROR]", msg);
+  res.status(status).json({ error: msg });
 });
 
-// Start only after DB connects
+/* ------------------------- Start after DB connects ------------------------ */
 connectDB()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`[CORS] Allowed origins: ${ORIGINS.join(", ")}`);
     });
   })
   .catch((err) => {
