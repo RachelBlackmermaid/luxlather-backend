@@ -18,19 +18,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5050;
 
-// Behind a proxy (Render/Vercel/etc.) so secure cookies work
 app.set("trust proxy", 1);
 
 /* --------------------------- CORS (credentials) --------------------------- */
-/**
- * Set CLIENT_ORIGINS in Render like:
- *   https://luxlather.store,https://luxlather-frontend.onrender.com,http://localhost:5173
- * You can also use CLIENT_ORIGIN (single) if you prefer.
- */
 const DEFAULT_ORIGINS = [
   "http://localhost:5173",
-  "https://luxlather.store",
-  "https://luxlather-frontend.onrender.com",
+  "https://luxlather.vercel.app", // your Vercel production domain (adjust if different)
+  "https://luxlather.store",      // your custom domain (if used)
 ];
 
 const ORIGINS = (
@@ -39,26 +33,21 @@ const ORIGINS = (
   DEFAULT_ORIGINS.join(",")
 )
   .split(",")
-  .map((s) => s.trim().replace(/\/+$/, "")) // strip spaces + trailing slashes
+  .map((s) => s.trim().replace(/\/+$/, ""))
   .filter(Boolean);
 
-// Optional: allow Vercel preview apps too
+// Allow all Vercel preview URLs like https://<branch>-<proj>.vercel.app
 const VERCEL_PREVIEW = /\.vercel\.app$/i;
 
 const corsOptions = {
   credentials: true,
-  origin(origin, callback) {
-    // Allow server-to-server/CLI/no-Origin (curl, Stripe, health checks)
-    if (!origin) return callback(null, true);
-
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // curl/server-to-server/no-Origin
     const clean = origin.replace(/\/+$/, "");
-    if (ORIGINS.includes(clean) || VERCEL_PREVIEW.test(clean)) {
-      return callback(null, true);
-    }
-
-    // Don’t throw here (throwing leads to 500); just deny CORS headers.
+    if (ORIGINS.includes(clean) || VERCEL_PREVIEW.test(clean)) return cb(null, true);
     console.warn("[CORS] Blocked origin:", origin);
-    return callback(null, false);
+    // don't throw → avoids Express 500s; browser will block due to missing ACAO
+    return cb(null, false);
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -66,10 +55,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // handle preflight cleanly
+// ❌ remove app.options("*", ...) or "(.*)" to avoid path-to-regexp errors
 
 /* ------------------- Stripe webhook BEFORE body parsers ------------------- */
-// stripeWebhook exposes POST /webhook  -> final URL:  POST /api/stripe/webhook
 app.use("/api/stripe", stripeWebhook);
 
 /* --------------------------- Body/Cookie parsers -------------------------- */
@@ -89,16 +77,12 @@ app.use("/api/contact", contactRoutes);
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* ---------------------------------- 404s ---------------------------------- */
-app.use((req, res) => res.status(404).json({ error: "Not found", path: req.path }));
+app.use((req, res) => res.status(404).json({ error: "Not found", path: req.path, query: req.query }));
 
 /* --------------------------- Central error handler ------------------------ */
 app.use((err, req, res, _next) => {
-  // If CORS origin was blocked and some middleware bubbled an error anyway,
-  // respond with 403 instead of a generic 500.
   const msg = err?.message || "Server error";
-  const status =
-    /cors/i.test(msg) || /not allowed by cors/i.test(msg) ? 403 : 500;
-
+  const status = /not allowed by cors/i.test(msg) ? 403 : 500;
   console.error("[ERROR]", msg);
   res.status(status).json({ error: msg });
 });
@@ -116,7 +100,6 @@ connectDB()
     process.exit(1);
   });
 
-// Optional: log unhandled rejections so they don't fail silently
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
 });
