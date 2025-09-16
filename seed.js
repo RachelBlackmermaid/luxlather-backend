@@ -1,11 +1,9 @@
-// seed.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Product from "./models/Product.js";
 
 dotenv.config();
 
-/* ---------- sample data (keep/edit freely) ---------- */
 const oils = [
   { name: "Lavendar Oil", price: 48, imageSrc: "/oil1.png", description: "Tall slender porcelain bottle with natural clay textured body and cork stopper.", category: "oil" },
   { name: "Batana Oil",   price: 35, imageSrc: "/oil2.png", description: "Olive drab green insulated bottle with flared screw lid and flat top.",       category: "oil" },
@@ -20,13 +18,11 @@ const soaps = [
   { name: "All Purpose",  price: 35, imageSrc: "/soap4.png", description: "Hand holding black machined steel mechanical pencil with brass tip and top.",   category: "soap" },
 ];
 
-/* ---------- currency helpers (align with backend) ---------- */
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || "JPY").toUpperCase();
 const CURRENCY_EXPONENT = { JPY: 0, USD: 2, EUR: 2, GBP: 2, UGX: 0 };
 const getExponent = (cur) => CURRENCY_EXPONENT[cur] ?? 2;
 const toMinor = (major, currency) => Math.round(Number(major) * 10 ** getExponent(currency));
 
-/* ---------- main ---------- */
 async function run() {
   const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
   if (!uri) {
@@ -80,7 +76,7 @@ async function run() {
       }
     }
 
-    console.log(`\n✅ Done. Created: ${created}, Updated: ${updated}`);
+    console.log(`\nDone. Created: ${created}, Updated: ${updated}`);
     console.log(`   Default currency: ${DEFAULT_CURRENCY}`);
     process.exit(0);
   } catch (err) {

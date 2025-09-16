@@ -1,18 +1,5 @@
-// services/productService.js
 import Product from "../models/Product.js";
 
-/**
- * Get products with optional pagination/sorting.
- * By default returns a plain array (no pagination object) to match current controllers.
- *
- * options = {
- *   page?: number,         // 1-based
- *   pageSize?: number,     // default 20
- *   sort?: string|object,  // e.g. "-createdAt" or { createdAt: -1 }
- *   select?: string,       // e.g. "name imageSrc priceCents"
- *   paginate?: boolean,    // if true, returns { items, total, page, pageSize, pages }
- * }
- */
 export const getAllProducts = async (filter = {}, options = {}) => {
   const {
     page = 1,

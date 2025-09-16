@@ -42,7 +42,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-/* ---------- mailer (optional but recommended) ---------- */
+/* ---------- mailer  ---------- */
 let transporter = null;
 if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
   transporter = nodemailer.createTransport({

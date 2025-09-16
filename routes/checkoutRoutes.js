@@ -1,4 +1,3 @@
-// routes/checkoutRoutes.js
 import express from "express";
 import stripe from "../lib/stripe.js";          // ✅ centralized Stripe client (with key loaded)
 import Product from "../models/Product.js";
@@ -63,7 +62,6 @@ async function createCheckoutSession(req, res) {
       return res.status(400).json({ error: `Unsupported currency: ${currency}` });
     }
 
-    // Load products (never trust client price)
     const productIds = items.map((i) => i.productId);
     const products = await Product.find({ _id: { $in: productIds } })
       .select("_id name imageSrc price priceCents prices")

@@ -1,15 +1,14 @@
-// routes/stripeWebhook.js
 import express from "express";
-import stripe from "../lib/stripe.js";           // ✅ centralized Stripe client (uses STRIPE_SECRET_KEY)
+import stripe from "../lib/stripe.js";           //centralized Stripe client (uses STRIPE_SECRET_KEY)
 import Order from "../models/Order.js";
 
 const router = express.Router();
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Final URL: POST /api/stripe/webhook
+// POST /api/stripe/webhook
 router.post(
   "/webhook",
-  // Keep raw body ONLY on this route so we can verify the Stripe signature
+
   express.raw({ type: "application/json" }),
   async (req, res) => {
     if (!endpointSecret) {
@@ -49,8 +48,6 @@ router.post(
             (li.amount_subtotal && li.quantity ? Math.round(li.amount_subtotal / li.quantity) : 0);
 
           return {
-            // We may not have your internal productId here because we used price_data
-            // in Checkout. If you later use Prices/Products, you can map via li.price?.product
             name: li.description || li.price?.nickname || li.price?.id || "Item",
             quantity: li.quantity || 1,
             priceCents: unitMinor ?? 0,
@@ -81,15 +78,9 @@ router.post(
         console.log("✅ Order saved/updated from Stripe webhook:", session.id);
       }
 
-      // (Optional) handle other events if you need them:
-      // - checkout.session.async_payment_succeeded
-      // - payment_intent.succeeded
-      // - charge.refunded, etc.
-
       return res.status(200).json({ received: true });
     } catch (err) {
       console.error("❌ Webhook handler failed:", err?.message || err);
-      // Always 200 to prevent Stripe retries from exploding logs; but you can 500 if you want retries.
       return res.status(200).json({ received: true, warning: "handler_error" });
     }
   }

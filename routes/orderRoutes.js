@@ -1,4 +1,3 @@
-// routes/orderRoutes.js
 import express from "express";
 import jwt from "jsonwebtoken";
 import Order from "../models/Order.js";
@@ -55,9 +54,6 @@ const toMinor = (major, currency) => {
   return Math.round(Number(major) * 10 ** exp);
 };
 
-/* Prefer per-currency prices on Product; fall back sensibly.
- * Return integer in minor units (e.g., cents for USD, yen for JPY).
- */
 const getUnitAmountMinor = (product, currency) => {
   if (product?.prices && typeof product.prices[currency] === "number") {
     return product.prices[currency]; 
@@ -67,18 +63,6 @@ const getUnitAmountMinor = (product, currency) => {
   throw new Error("No usable price on product for selected currency");
 };
 
-/* ---------- Create order (guest or authenticated) ----------
-Body:
-{
-  name: string,
-  email: string,
-  phone?: string,
-  address: string,
-  currency?: "JPY" | "USD" | ...,
-  items: [{ productId: string, quantity: number }],
-  stripeSessionId?: string
-}
-*/
 router.post("/", optionalAuth, async (req, res) => {
   try {
     const {
@@ -215,9 +199,6 @@ router.get("/:id", optionalAuth, async (req, res) => {
   }
 });
 
-/* ---------- Update status (admin) ----------
-Body: { status: "pending" | "paid" | "fulfilled" | "cancelled" | "refunded" }
-*/
 router.patch("/:id/status", optionalAuth, requireAdmin, async (req, res) => {
   try {
     const allowed = new Set(["pending", "paid", "fulfilled", "cancelled", "refunded"]);

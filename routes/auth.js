@@ -1,4 +1,3 @@
-// routes/auth.js
 import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
@@ -42,11 +41,6 @@ function setAuthCookie(res, token) {
   res.cookie("token", token, COOKIE_OPTS);
 }
 
-/**
- * POST /api/auth/signup
- * Body: { email: string, password: string, name?: string, username?: string }
- * - Email required (you can make username required later if you want)
- */
 router.post("/signup", async (req, res) => {
   try {
     const { email, password, name, username } = req.body || {};
@@ -88,12 +82,6 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-/**
- * POST /api/auth/login
- * Body: { identifier?: string, email?: string, username?: string, password: string }
- * - identifier can be either email or username
- * - Falls back to env-admin if DB user not found
- */
 router.post("/login", async (req, res) => {
   try {
     const { identifier, email, username, password } = req.body || {};
@@ -146,10 +134,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/**
- * (Optional) Legacy env-admin endpoint, kept for backward-compat
- * Body: { username: string, password: string }
- */
+
 router.post("/admin/env-login", (req, res) => {
   const { username, password } = req.body || {};
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
@@ -163,12 +148,7 @@ router.post("/admin/env-login", (req, res) => {
   return res.status(401).json({ error: "Invalid credentials" });
 });
 
-/**
- * GET /api/auth/me
- * - Reads bearer token or cookie
- * - If sub present, loads DB user
- * - Else returns env-admin shape
- */
+
 router.get("/me", async (req, res) => {
   try {
     const bearer = (req.headers.authorization || "").replace("Bearer ", "");
